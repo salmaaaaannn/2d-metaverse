@@ -1,0 +1,13 @@
+{
+  "name": "skyoffice-agent",
+  "version": "1.0.0",
+  "description": "Native agent for full OS control",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "robotjs": "^0.6.0",
+    "ws": "^8.13.0"
+  }
+}

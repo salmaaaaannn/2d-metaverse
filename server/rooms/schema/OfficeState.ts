@@ -7,6 +7,10 @@ import {
   IChatMessage,
 } from '../../../types/IOfficeState'
 
+export class Chair extends Schema {
+  @type({ set: 'string' }) connectedUser = new SetSchema<string>()
+}
+
 export class Player extends Schema implements IPlayer {
   @type('string') name = ''
   @type('number') x = 705
@@ -18,6 +22,10 @@ export class Player extends Schema implements IPlayer {
 
 export class Computer extends Schema implements IComputer {
   @type({ set: 'string' }) connectedUser = new SetSchema<string>()
+  
+  // FIX: Added @type decorator so these sync to the client
+  @type('string') controlledBy = ''
+  @type('string') controlRequestedBy = ''
 }
 
 export class Whiteboard extends Schema implements IWhiteboard {
@@ -40,6 +48,9 @@ export class OfficeState extends Schema implements IOfficeState {
 
   @type({ map: Whiteboard })
   whiteboards = new MapSchema<Whiteboard>()
+
+  @type({ map: Chair })
+  chairs = new MapSchema<Chair>()
 
   @type([ChatMessage])
   chatMessages = new ArraySchema<ChatMessage>()

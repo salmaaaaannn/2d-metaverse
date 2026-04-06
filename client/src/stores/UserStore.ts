@@ -19,6 +19,8 @@ export const userSlice = createSlice({
     loggedIn: false,
     playerNameMap: new Map<string, string>(),
     showJoystick: window.innerWidth < 650,
+    // New: store which users are muted locally (PUBG-style)
+    mutedUsers: {} as Record<string, boolean>, // key: userId, value: muted
   },
   reducers: {
     toggleBackgroundMode: (state) => {
@@ -47,6 +49,19 @@ export const userSlice = createSlice({
     setShowJoystick: (state, action: PayloadAction<boolean>) => {
       state.showJoystick = action.payload
     },
+    // New actions for per-user mute
+    setMutedUser: (state, action: PayloadAction<{ userId: string; muted: boolean }>) => {
+      const { userId, muted } = action.payload
+      const sanitized = sanitizeId(userId)
+      if (muted) {
+        state.mutedUsers[sanitized] = true
+      } else {
+        delete state.mutedUsers[sanitized]
+      }
+    },
+    clearMutedUsers: (state) => {
+      state.mutedUsers = {}
+    },
   },
 })
 
@@ -58,6 +73,8 @@ export const {
   setPlayerNameMap,
   removePlayerNameMap,
   setShowJoystick,
+  setMutedUser,
+  clearMutedUsers,
 } = userSlice.actions
 
 export default userSlice.reducer

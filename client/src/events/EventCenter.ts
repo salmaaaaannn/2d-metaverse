@@ -14,4 +14,6 @@ export enum Event {
   ITEM_USER_ADDED = 'item-user-added',
   ITEM_USER_REMOVED = 'item-user-removed',
   UPDATE_DIALOG_BUBBLE = 'update-dialog-bubble',
+  WHITEBOARD_DRAW = 'whiteboard-draw',
+  WHITEBOARD_UPDATE = 'whiteboard-update', // New event for whiteboard sync
 }

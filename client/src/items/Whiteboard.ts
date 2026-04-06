@@ -1,3 +1,4 @@
+import Phaser from 'phaser'
 import { ItemType } from '../../../types/Items'
 import store from '../stores'
 import Item from './Item'
@@ -10,26 +11,22 @@ export default class Whiteboard extends Item {
 
   constructor(scene: Phaser.Scene, x: number, y: number, texture: string, frame?: string | number) {
     super(scene, x, y, texture, frame)
-
     this.itemType = ItemType.WHITEBOARD
   }
 
   private updateStatus() {
     if (!this.currentUsers) return
-    const numberOfUsers = this.currentUsers.size
+    const count = this.currentUsers.size
     this.clearStatusBox()
-    if (numberOfUsers === 1) {
-      this.setStatusBox(`${numberOfUsers} user`)
-    } else if (numberOfUsers > 1) {
-      this.setStatusBox(`${numberOfUsers} users`)
-    }
+    if (count === 1) this.setStatusBox(`${count} user`)
+    else if (count > 1) this.setStatusBox(`${count} users`)
   }
 
   onOverlapDialog() {
     if (this.currentUsers.size === 0) {
       this.setDialogBox('Press R to use whiteboard')
     } else {
-      this.setDialogBox('Press R join')
+      this.setDialogBox('Press R to join')
     }
   }
 
@@ -46,8 +43,13 @@ export default class Whiteboard extends Item {
   }
 
   openDialog(network: Network) {
-    if (!this.id) return
+    if (!this.id) {
+      console.error('Whiteboard ID is missing')
+      return
+    }
+    // Open the React dialog
     store.dispatch(openWhiteboardDialog(this.id))
+    // Tell the server we're connected to this whiteboard
     network.connectToWhiteboard(this.id)
   }
 }

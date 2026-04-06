@@ -12,6 +12,7 @@ export default class OtherPlayer extends Player {
   private connected = false
   private playContainerBody: Phaser.Physics.Arcade.Body
   private myPlayer?: MyPlayer
+  private onPlayerDisconnectedListener: (id: string) => void
 
   constructor(
     scene: Phaser.Scene,
@@ -27,19 +28,48 @@ export default class OtherPlayer extends Player {
 
     this.playerName.setText(name)
     this.playContainerBody = this.playerContainer.body as Phaser.Physics.Arcade.Body
+
+    // Reset connected flag when the call is ended by Game.ts (proximity lost)
+    this.onPlayerDisconnectedListener = (disconnectedId: string) => {
+      if (disconnectedId === this.playerId) {
+        this.connected = false
+        this.connectionBufferTime = 0 // Reset buffer to avoid immediate re-call flicker
+      }
+    }
+    phaserEvents.on(Event.PLAYER_DISCONNECTED, this.onPlayerDisconnectedListener)
   }
 
+  /**
+   * makeCall is triggered by Game.ts proximity check.
+   * Uses a tie‑breaker (higher ID calls) to avoid duplicate calls.
+   */
   makeCall(myPlayer: MyPlayer, webRTC: WebRTC) {
     this.myPlayer = myPlayer
     const myPlayerId = myPlayer.playerId
+
+    // Log the conditions (useful for debugging)
+    console.log(`[OtherPlayer] makeCall ${this.playerId}:
+      connected=${this.connected},
+      buffer=${this.connectionBufferTime},
+      myPlayer.ready=${myPlayer.readyToConnect},
+      this.ready=${this.readyToConnect},
+      myPlayer.video=${myPlayer.videoConnected},
+      idCondition=${myPlayerId > this.playerId}`)
+
+    // Conditions for initiating a call:
+    // - Not already connected
+    // - Buffer time > 100ms (reduced from 750ms for faster response)
+    // - Both players are ready and have video connected
+    // - ID tie‑breaker: only the player with the higher ID initiates
     if (
       !this.connected &&
-      this.connectionBufferTime >= 750 &&
+      this.connectionBufferTime >= 100 && // <-- Reduced for faster call start
       myPlayer.readyToConnect &&
       this.readyToConnect &&
       myPlayer.videoConnected &&
       myPlayerId > this.playerId
     ) {
+      console.log(`🎥 Proximity call initiated: ${myPlayerId} -> ${this.playerId}`)
       webRTC.connectToNewUser(this.playerId)
       this.connected = true
       this.connectionBufferTime = 0
@@ -49,55 +79,36 @@ export default class OtherPlayer extends Player {
   updateOtherPlayer(field: string, value: number | string | boolean) {
     switch (field) {
       case 'name':
-        if (typeof value === 'string') {
-          this.playerName.setText(value)
-        }
+        if (typeof value === 'string') this.playerName.setText(value)
         break
-
       case 'x':
-        if (typeof value === 'number') {
-          this.targetPosition[0] = value
-        }
+        if (typeof value === 'number') this.targetPosition[0] = value
         break
-
       case 'y':
-        if (typeof value === 'number') {
-          this.targetPosition[1] = value
-        }
+        if (typeof value === 'number') this.targetPosition[1] = value
         break
-
       case 'anim':
-        if (typeof value === 'string') {
-          this.anims.play(value, true)
-        }
+        if (typeof value === 'string') this.anims.play(value, true)
         break
-
       case 'readyToConnect':
-        if (typeof value === 'boolean') {
-          this.readyToConnect = value
-        }
+        if (typeof value === 'boolean') this.readyToConnect = value
         break
-
       case 'videoConnected':
-        if (typeof value === 'boolean') {
-          this.videoConnected = value
-        }
+        if (typeof value === 'boolean') this.videoConnected = value
         break
     }
   }
 
   destroy(fromScene?: boolean) {
+    phaserEvents.off(Event.PLAYER_DISCONNECTED, this.onPlayerDisconnectedListener)
     this.playerContainer.destroy()
-
     super.destroy(fromScene)
   }
 
-  /** preUpdate is called every frame for every game object. */
   preUpdate(t: number, dt: number) {
     super.preUpdate(t, dt)
 
-    // if Phaser has not updated the canvas (when the game tab is not active) for more than 1 sec
-    // directly snap player to their current locations
+    // Snap logic if tab inactive (prevents players from "flying" across screen)
     if (this.lastUpdateTimestamp && t - this.lastUpdateTimestamp > 750) {
       this.lastUpdateTimestamp = t
       this.x = this.targetPosition[0]
@@ -108,24 +119,25 @@ export default class OtherPlayer extends Player {
     }
 
     this.lastUpdateTimestamp = t
-    this.setDepth(this.y) // change player.depth based on player.y
+    this.setDepth(this.y)
+
+    // Sitting animation depth adjustment
     const animParts = this.anims.currentAnim.key.split('_')
     const animState = animParts[1]
     if (animState === 'sit') {
       const animDir = animParts[2]
       const sittingShift = sittingShiftData[animDir]
       if (sittingShift) {
-        // set hardcoded depth (differs between directions) if player sits down
         this.setDepth(this.depth + sittingShiftData[animDir][2])
       }
     }
 
-    const speed = 200 // speed is in unit of pixels per second
-    const delta = (speed / 1000) * dt // minimum distance that a player can move in a frame (dt is in unit of ms)
+    // Movement interpolation
+    const speed = 200
+    const delta = (speed / 1000) * dt
     let dx = this.targetPosition[0] - this.x
     let dy = this.targetPosition[1] - this.y
 
-    // if the player is close enough to the target position, directly snap the player to that position
     if (Math.abs(dx) < delta) {
       this.x = this.targetPosition[0]
       this.playerContainer.x = this.targetPosition[0]
@@ -137,48 +149,29 @@ export default class OtherPlayer extends Player {
       dy = 0
     }
 
-    // if the player is still far from target position, impose a constant velocity towards it
-    let vx = 0
-    let vy = 0
+    let vx = 0, vy = 0
     if (dx > 0) vx += speed
     else if (dx < 0) vx -= speed
     if (dy > 0) vy += speed
     else if (dy < 0) vy -= speed
 
-    // update character velocity
     this.setVelocity(vx, vy)
     this.body.velocity.setLength(speed)
-    // also update playerNameContainer velocity
     this.playContainerBody.setVelocity(vx, vy)
     this.playContainerBody.velocity.setLength(speed)
 
-    // while currently connected with myPlayer
-    // if myPlayer and the otherPlayer stop overlapping, delete video stream
+    // Increment buffer time so makeCall knows how long the player has been near
     this.connectionBufferTime += dt
-    if (
-      this.connected &&
-      !this.body.embedded &&
-      this.body.touching.none &&
-      this.connectionBufferTime >= 750
-    ) {
-      if (this.x < 610 && this.y > 515 && this.myPlayer!.x < 610 && this.myPlayer!.y > 515) return
-      phaserEvents.emit(Event.PLAYER_DISCONNECTED, this.playerId)
-      this.connectionBufferTime = 0
-      this.connected = false
-    }
   }
 }
 
+/** Register the otherPlayer factory for easy use in Game.ts */
 declare global {
   namespace Phaser.GameObjects {
     interface GameObjectFactory {
       otherPlayer(
-        x: number,
-        y: number,
-        texture: string,
-        id: string,
-        name: string,
-        frame?: string | number
+        x: number, y: number, texture: string,
+        id: string, name: string, frame?: string | number
       ): OtherPlayer
     }
   }
@@ -186,20 +179,10 @@ declare global {
 
 Phaser.GameObjects.GameObjectFactory.register(
   'otherPlayer',
-  function (
-    this: Phaser.GameObjects.GameObjectFactory,
-    x: number,
-    y: number,
-    texture: string,
-    id: string,
-    name: string,
-    frame?: string | number
-  ) {
+  function (this: Phaser.GameObjects.GameObjectFactory, x, y, texture, id, name, frame) {
     const sprite = new OtherPlayer(this.scene, x, y, texture, id, name, frame)
-
     this.displayList.add(sprite)
     this.updateList.add(sprite)
-
     this.scene.physics.world.enableBody(sprite, Phaser.Physics.Arcade.DYNAMIC_BODY)
 
     const collisionScale = [6, 4]
